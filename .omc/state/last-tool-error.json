@@ -1,0 +1,7 @@
+{
+  "tool_name": "Bash",
+  "tool_input_preview": "{\"command\":\"ls \\\"C:/projects/freight-tracker/node_modules/\\\" 2>&1 | wc -l; ls \\\"C:/projects/freight-tracker/node_modules/.package-lock.json\\\" 2>&1\",\"description\":\"Check node_modules state\"}",
+  "error": "Exit code 2\n146\nls: cannot access 'C:/projects/freight-tracker/node_modules/.package-lock.json': No such file or directory",
+  "timestamp": "2026-07-24T02:53:03.202Z",
+  "retry_count": 1
+}
