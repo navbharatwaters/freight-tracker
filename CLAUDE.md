@@ -80,9 +80,26 @@ The parser drops unrecognised lane headers by design. When the agent adds a
 port, add it to `ORIGINS` in **both** parsers. Detect misses via
 `freight_mail_log.rows_parsed` dropping well below ~60.
 
+## Deploying
+
+See **`DEPLOY.md`** — it names the host, the service, the app directory, and
+the order of operations. Read it before touching production; there is no CI,
+so nothing ships until someone runs those steps by hand.
+
+Two things that have already bitten:
+
+- **The ingest request path must not depend on Python.** The box has
+  `python3` but not `beautifulsoup4`, so the old `spawn("python3", ...)` route
+  failed on every upload and paste. Parsing lives in `lib/parse-mail.ts` now.
+- **Schema migration before code, every time.** The app infers `ON CONFLICT`
+  from the unique index. Ship code against the old index and every insert
+  fails with `42P10`.
+
 ## Safety
 
-- Local/dev Postgres only. Never point migrations at production.
+- Local/dev Postgres only. Never point migrations at production **from a dev
+  machine**. Migrations run on the box itself, against the `DATABASE_URL` in
+  its own `.env`, after a `pg_dump` — see DEPLOY.md steps 4–6.
 - Credentials in `.env`, gitignored. Never hardcode a connection string.
 
 ## Stack

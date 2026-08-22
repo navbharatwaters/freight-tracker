@@ -74,7 +74,7 @@ export async function insertParsed(parsed: ParseResult): Promise<InsertResult> {
         `INSERT INTO freight_quotes
            (quote_date, origin_port, dest_port, rate_20, rate_40, source, sender, message_id, raw_line)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-         ON CONFLICT (quote_date, origin_port, dest_port, source, COALESCE(sender, ''), raw_line)
+         ON CONFLICT (quote_date, origin_port, dest_port, source, (COALESCE(sender, '')), raw_line)
            DO NOTHING
          RETURNING id`,
         [

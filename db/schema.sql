@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS freight_quotes (
 -- (both extract.py and n8n_parse.js do this) or the same quote stores twice.
 CREATE UNIQUE INDEX IF NOT EXISTS uq_freight_quotes_dedupe
     ON freight_quotes (quote_date, origin_port, dest_port, source,
-                       COALESCE(sender, ''), raw_line);
+                       (COALESCE(sender, '')), raw_line);
 
 CREATE INDEX IF NOT EXISTS ix_freight_quotes_lane
     ON freight_quotes (dest_port, origin_port, quote_date);

@@ -31,7 +31,7 @@ BEGIN;
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_freight_quotes_dedupe_v2
     ON freight_quotes (quote_date, origin_port, dest_port, source,
-                       COALESCE(sender, ''), raw_line);
+                       (COALESCE(sender, '')), raw_line);
 
 DROP INDEX IF EXISTS uq_freight_quotes_dedupe;
 
