@@ -29,6 +29,10 @@ branch handles a real case found in production email:
 Extending is fine. Rewriting from scratch loses all of the above, because
 these cases are in the fixture, not in general knowledge.
 
+**Open work lives in `TODO.md`.** Check it before starting — it currently
+records that the live n8n Code node still runs an outdated copy of the parser
+and is silently dropping rows.
+
 **The two parsers must stay in sync.** Python is for offline `.eml` batches,
 JS runs in the n8n Code node. They must produce identical output. Change one,
 change the other, re-run tests.
