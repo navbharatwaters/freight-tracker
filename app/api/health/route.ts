@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 
-export const revalidate = 300;
+// Health must reflect the live database, never a build-time snapshot.
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export async function GET() {
   try {

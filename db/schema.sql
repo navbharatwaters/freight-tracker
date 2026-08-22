@@ -31,10 +31,21 @@ CREATE TABLE IF NOT EXISTS freight_quotes (
 -- Idempotency: re-running the same mail (or re-uploading via /admin) must not
 -- duplicate rows. Includes raw_line so two different sailings of the same
 -- carrier (different rates or ETDs) are kept as distinct quotes.
+--
 -- Deliberately does NOT include message_id -- backfilled forwards have NULL
 -- message_id, so a partial-index dedupe would let re-uploads double them.
+-- The same mail also arrives twice under two different Message-IDs: once
+-- direct from the agent, once forwarded on. Only row identity catches that.
+--
+-- DOES include sender, via COALESCE so a NULL still collides. Both reps quote
+-- the same lanes on the same day and both quotes are real: without sender,
+-- 17 Jul Shenzhen -> Nhava Sheva collapses from n=26 to n=17.
+--
+-- raw_line must be whitespace-normalised by the parser before it gets here
+-- (both extract.py and n8n_parse.js do this) or the same quote stores twice.
 CREATE UNIQUE INDEX IF NOT EXISTS uq_freight_quotes_dedupe
-    ON freight_quotes (quote_date, origin_port, dest_port, source, raw_line);
+    ON freight_quotes (quote_date, origin_port, dest_port, source,
+                       COALESCE(sender, ''), raw_line);
 
 CREATE INDEX IF NOT EXISTS ix_freight_quotes_lane
     ON freight_quotes (dest_port, origin_port, quote_date);

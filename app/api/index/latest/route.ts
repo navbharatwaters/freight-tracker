@@ -1,30 +1,26 @@
 import { NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { getIndexRows } from "@/lib/index-data";
 
 export const revalidate = 900;
 
-type Row = {
-  quote_date: string;
-  origin_port: string;
-  dest_port: string;
-  rate_20: number | null;
-  rate_40: number | null;
-  n_20: number;
-  n_40: number;
-};
-
 export async function GET() {
-  const rows = await query<Row>(`
-    SELECT
-      to_char(quote_date, 'YYYY-MM-DD') AS quote_date,
-      origin_port, dest_port,
-      rate_20, rate_40, n_20, n_40
-    FROM freight_index_latest
-    ORDER BY dest_port, origin_port
-  `);
+  const { rows, source, error } = await getIndexRows();
+
+  if (error) {
+    return NextResponse.json({ error }, { status: 503 });
+  }
+
+  // Latest observation per lane. Rows arrive ordered by quote_date ascending,
+  // so the last write per lane wins.
+  const byLane = new Map<string, (typeof rows)[number]>();
+  for (const r of rows) byLane.set(`${r.origin}|${r.dest}`, r);
+
+  const latest = [...byLane.values()].sort(
+    (a, b) => a.dest.localeCompare(b.dest) || a.origin.localeCompare(b.origin)
+  );
 
   return NextResponse.json(
-    { rows, updated_at: new Date().toISOString() },
+    { rows: latest, source, updated_at: new Date().toISOString() },
     { headers: { "Cache-Control": "public, max-age=60, s-maxage=900" } }
   );
 }

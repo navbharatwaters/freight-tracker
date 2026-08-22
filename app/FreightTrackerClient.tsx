@@ -7,6 +7,36 @@ import type { UiRow } from "./page";
 
 const DESTS = ["NHAVA SHEVA", "CHENNAI", "KOLKATA"] as const;
 const DAY = 86_400_000;
+
+const RANGES = [
+  { key: "3M", label: "3 months", days: 90 },
+  { key: "6M", label: "6 months", days: 182 },
+  { key: "ALL", label: "All", days: null },
+] as const;
+
+// Mail arrives when rates move, not on a schedule -- 5-8 day gaps are normal
+// and must still be drawn as one continuous line. A silence beyond this is
+// not a slow week, it is missing history, and joining across it would draw a
+// trend nobody measured. Those get a genuine break in the line instead.
+const GAP_DAYS = 21;
+
+type Point = {
+  t: number;
+  date: string;
+  rate20: number | null;
+  rate40: number | null;
+  n20: number;
+  n40: number;
+};
+
+/** Evenly spaced axis ticks. One tick per observation is unreadable at 66. */
+function pickTicks(points: Point[], max = 8): number[] {
+  if (points.length <= max) return points.map((p) => p.t);
+  const step = (points.length - 1) / (max - 1);
+  const out = new Set<number>();
+  for (let i = 0; i < max; i++) out.add(points[Math.round(i * step)].t);
+  return [...out];
+}
 const ts = (d: string) => new Date(d + "T00:00:00Z").getTime();
 const fmtShort = (t: number) =>
   new Date(t).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
@@ -16,12 +46,15 @@ const fmtLong = (t: number) =>
 export default function FreightTrackerClient({
   data,
   error,
+  source = "db",
 }: {
   data: UiRow[];
   error: string | null;
+  source?: "db" | "static";
 }) {
   const [dest, setDest] = useState<string>("NHAVA SHEVA");
   const [origin, setOrigin] = useState<string>("SHENZHEN");
+  const [range, setRange] = useState<string>("ALL");
 
   const LATEST = useMemo(
     () => data.reduce((m, r) => (r.date > m ? r.date : m), ""),
@@ -34,7 +67,8 @@ export default function FreightTrackerClient({
   );
   const activeOrigin = origins.includes(origin) ? origin : origins[0] ?? "";
 
-  const series = useMemo(
+  // Every observation on this lane, oldest first.
+  const lane = useMemo<Point[]>(
     () =>
       data
         .filter((r) => r.dest === dest && r.origin === activeOrigin)
@@ -43,14 +77,49 @@ export default function FreightTrackerClient({
     [data, dest, activeOrigin]
   );
 
-  const latest = series[series.length - 1];
-  const first = series[0];
+  // Trailing window, measured back from the newest observation on the lane
+  // rather than from today -- "3 months" of a feed that went quiet in August
+  // should still show August.
+  const points = useMemo<Point[]>(() => {
+    const days = RANGES.find((r) => r.key === range)?.days;
+    if (!days || !lane.length) return lane;
+    const cutoff = lane[lane.length - 1].t - days * DAY;
+    const win = lane.filter((p) => p.t >= cutoff);
+    return win.length > 1 ? win : lane;
+  }, [lane, range]);
+
+  // Chart rows = observations plus an explicit null spacer inside any long
+  // silence, so `connectNulls={false}` breaks the line there instead of
+  // drawing a straight run across two months of missing mail.
+  const series = useMemo(() => {
+    const out: (Point & { gap?: boolean })[] = [];
+    points.forEach((p, i) => {
+      const prev = points[i - 1];
+      if (prev && p.t - prev.t > GAP_DAYS * DAY) {
+        out.push({
+          t: Math.round((prev.t + p.t) / 2),
+          date: "",
+          rate20: null,
+          rate40: null,
+          n20: 0,
+          n40: 0,
+          gap: true,
+        });
+      }
+      out.push(p);
+    });
+    return out;
+  }, [points]);
+
+  const latest = points[points.length - 1];
+  const first = points[0];
   const pct = (a?: number | null, b?: number | null) =>
     a && b ? (((b - a) / a) * 100).toFixed(1) : null;
   const d20 = pct(first?.rate20, latest?.rate20);
   const d40 = pct(first?.rate40, latest?.rate40);
-  const thin = series.some((s) => s.n40 > 0 && s.n40 < 5);
-  const spanDays = series.length > 1 ? Math.round((latest.t - first.t) / DAY) : 0;
+  const thin = points.some((s) => s.n40 > 0 && s.n40 < 5);
+  const spanDays = points.length > 1 ? Math.round((latest.t - first.t) / DAY) : 0;
+  const gaps = series.filter((s) => s.gap).length;
 
   const table = useMemo(
     () =>
@@ -60,9 +129,14 @@ export default function FreightTrackerClient({
     [data, dest, LATEST]
   );
 
-  const domain: [number, number] = series.length
-    ? [first.t - DAY, latest.t + DAY]
+  const pad = Math.max(DAY, Math.round((spanDays * DAY) / 60));
+  const domain: [number, number] = points.length
+    ? [first.t - pad, latest.t + pad]
     : [0, 1];
+  const ticks = useMemo(() => pickTicks(points), [points]);
+  // Dots stop being informative once they touch; past ~45 points, drop them
+  // and let the hover marker do the work.
+  const dotSize = points.length > 45 ? 0 : points.length > 25 ? 2 : 3;
 
   if (error) {
     return (
@@ -104,8 +178,13 @@ export default function FreightTrackerClient({
               Rates as of {fmtLong(ts(LATEST))}
             </span>
             <span className="text-xs text-slate-500">
-              {series.length} observations over {spanDays} days
+              {points.length} observations over {spanDays} days
             </span>
+            {source === "static" && (
+              <span className="text-[11px] text-slate-400" title="data/index.json, rebuilt by update.py">
+                static snapshot
+              </span>
+            )}
           </div>
         </header>
 
@@ -137,6 +216,28 @@ export default function FreightTrackerClient({
                 <option key={o} value={o}>{o}</option>
               ))}
             </select>
+          </div>
+          <div>
+            <label className="block text-[11px] uppercase tracking-wider text-slate-500 mb-1.5">
+              Range
+            </label>
+            <div className="inline-flex rounded-md border border-slate-300 overflow-hidden">
+              {RANGES.map((r) => (
+                <button
+                  key={r.key}
+                  type="button"
+                  onClick={() => setRange(r.key)}
+                  title={r.label}
+                  className={`px-3 py-2 text-sm border-l first:border-l-0 border-slate-300 ${
+                    range === r.key
+                      ? "bg-slate-900 text-white"
+                      : "bg-white text-slate-600 hover:bg-slate-50"
+                  }`}
+                >
+                  {r.key}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -173,12 +274,12 @@ export default function FreightTrackerClient({
                 type="number"
                 scale="time"
                 domain={domain}
-                ticks={series.map((s) => s.t)}
+                ticks={ticks}
                 tickFormatter={fmtShort}
                 tick={{ fontSize: 11, fill: "#64748b" }}
                 axisLine={{ stroke: "#e2e8f0" }}
                 tickLine={false}
-                minTickGap={14}
+                minTickGap={24}
               />
               <YAxis
                 domain={["dataMin - 100", "dataMax + 100"]}
@@ -189,22 +290,52 @@ export default function FreightTrackerClient({
               />
               <Tooltip
                 contentStyle={{ borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12 }}
-                labelFormatter={(l) => fmtLong(Number(l))}
-                formatter={(v, n, p: { payload?: UiRow }) => {
+                labelFormatter={(l, pl) =>
+                  pl?.[0]?.payload?.gap ? "No rate mail in this period" : fmtLong(Number(l))
+                }
+                formatter={(v, n, p: { payload?: Point & { gap?: boolean } }) => {
+                  if (p.payload?.gap) return ["", ""];
                   const cnt = n === "20ft" ? p.payload?.n20 : p.payload?.n40;
                   return [v ? `$${Number(v).toLocaleString()} · ${cnt} quotes` : "—", String(n)];
                 }}
               />
               <Legend iconType="line" wrapperStyle={{ fontSize: 12, paddingTop: 10 }} />
-              <Line type="linear" dataKey="rate20" name="20ft" stroke="#94a3b8" strokeWidth={2} dot={{ r: 3 }} connectNulls />
-              <Line type="linear" dataKey="rate40" name="40ft" stroke="#0f766e" strokeWidth={2.5} dot={{ r: 3.5 }} connectNulls />
+              {/* connectNulls stays OFF: the null spacers are the gap breaks. */}
+              <Line
+                type="linear"
+                dataKey="rate20"
+                name="20ft"
+                stroke="#94a3b8"
+                strokeWidth={2}
+                dot={dotSize ? { r: dotSize } : false}
+                activeDot={{ r: 4 }}
+                connectNulls={false}
+              />
+              <Line
+                type="linear"
+                dataKey="rate40"
+                name="40ft"
+                stroke="#0f766e"
+                strokeWidth={2.5}
+                dot={dotSize ? { r: dotSize + 0.5 } : false}
+                activeDot={{ r: 4.5 }}
+                connectNulls={false}
+              />
             </LineChart>
           </ResponsiveContainer>
 
           <p className="text-[11px] text-slate-500 mt-3 leading-relaxed">
-            Dots are spaced by actual calendar date. Wide gaps mean no rate update was issued in that period —
-            typically because pricing held steady or sailings were closed. A flat segment is not a measured
-            trend, only the absence of a revision.
+            Points are spaced by actual calendar date. Short gaps mean no rate update was issued in that
+            period — typically because pricing held steady or sailings were closed. A flat segment is not a
+            measured trend, only the absence of a revision.
+            {gaps > 0 && (
+              <>
+                {" "}
+                A <strong className="text-slate-700">break in the line</strong> marks a stretch of more than{" "}
+                {GAP_DAYS} days with no mail at all: the rate either side is real, the path between them is
+                not known and is deliberately not drawn.
+              </>
+            )}
           </p>
 
           {thin && (

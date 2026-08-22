@@ -13,3 +13,17 @@ build/
 .DS_Store
 .vscode/
 .idea/
+
+# TypeScript / Next generated
+tsconfig.tsbuildinfo
+next-env.d.ts
+
+# Raw mail import scratch dump. Every .eml in here is already deduped into
+# mails/, and it also carries the inline GIF/JPEG attachments (~35 MB).
+/freight index data/
+
+# Raw rate mails. Real customer names and addresses in the headers, ~25 MB.
+# The published numbers live in data/index.json, which IS committed, so the
+# site and the chart build without these. fixtures/emails/ stays tracked as
+# the regression corpus.
+/mails/*.eml

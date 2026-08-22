@@ -10,8 +10,11 @@ PORT_RE = re.compile(r'^([A-Z][A-Z\s.&\-]*?)\s+TO\s+([A-Z][A-Z\s.&\-]*?)\s*$', r
 SENT_RE = re.compile(r'Sent:?\s*\n?\s*(\d{1,2}\s+\w+\s+\d{4})', re.I)
 FROM_RE = re.compile(r'From:?\s*\n?\s*([^<\n]+)<([^>]+)>', re.I)
 
-def body_text(path):
-    m = email.message_from_file(open(path, errors='replace'), policy=policy.default)
+def load_msg(path):
+    return email.message_from_file(open(path, encoding='utf-8', errors='replace'),
+                                   policy=policy.default)
+
+def msg_text(m):
     b = m.get_body(preferencelist=('html', 'plain'))
     if not b:
         return ''
@@ -19,6 +22,33 @@ def body_text(path):
     if b.get_content_type() == 'text/html':
         t = BeautifulSoup(t, 'html.parser').get_text('\n')
     return t
+
+def body_text(path):
+    return msg_text(load_msg(path))
+
+# --- Header fallback -------------------------------------------------------
+# Forwarded mail: the real send date lives in the BODY ("Sent: 17 July 2026"),
+# because the header carries the FORWARD date. Never take it from the header.
+# Mail received DIRECT from the agent has no "Sent:" block at all -- there the
+# RFC Date:/From: headers ARE the original, and are the only source there is.
+# So: body first, header only as fallback. Never the other way round.
+def header_date(m):
+    d = m['Date']
+    try:
+        return d.datetime.date() if d is not None else None
+    except Exception:
+        return None
+
+def header_sender(m):
+    f = m['From']
+    if not f:
+        return None
+    hit = re.search(r'<([^>]+)>', str(f))
+    return (hit.group(1) if hit else str(f)).strip().lower()
+
+def header_message_id(m):
+    v = m['Message-ID']
+    return str(v).strip() if v else None
 
 def original_date(txt):
     m = SENT_RE.search(txt)
@@ -40,16 +70,22 @@ ORIGINS = {'SHENZHEN','SHEKOU','NANSHA','NINGBO','SHANGHAI','QINGDAO',
 DEST_ALIAS = {'CCU':'KOLKATA','NHAVA SHEVA':'NHAVA SHEVA','CHENNAI':'CHENNAI',
               'KOLKATA':'KOLKATA','MUNDRA':'MUNDRA'}
 
-def parse(txt, qdate, sender, srcfile):
+def parse(txt, qdate, sender, srcfile, message_id=None):
     rows, port = [], None
     for raw in txt.split('\n'):
-        line = raw.strip()
+        # Collapse whitespace up front, NBSP included. The agent's HTML is full
+        # of "NHAVA SHEVA" and "HPL USD955/960" -- left alone it splits
+        # one lane in two. Doing it here rather than per-field also keeps
+        # raw_line byte-identical to n8n_parse.js, which normalises the same
+        # way. raw_line is part of the dedupe key: if the two parsers disagree
+        # on it, the same quote lands twice.
+        line = re.sub(r'\s+', ' ', raw.replace('\xa0', ' ')).strip()
         if not line or len(line) > 120:
             continue
         p = PORT_RE.match(line)
         if p and not RATE_RE.search(line):
-            o = re.sub(r'\s+', ' ', p.group(1).replace('\xa0', ' ')).strip().upper()
-            d = re.sub(r'\s+', ' ', p.group(2).replace('\xa0', ' ')).strip().upper()
+            o = p.group(1).strip().upper()
+            d = p.group(2).strip().upper()
             if o in ORIGINS and d in DEST_ALIAS:
                 port = (o, DEST_ALIAS[d])
             else:
@@ -78,6 +114,7 @@ def parse(txt, qdate, sender, srcfile):
             'quote_date': qdate, 'origin_port': port[0], 'dest_port': port[1],
             'rate_20': r20, 'rate_40': r40,
             'source': 'ocean_star', 'sender': sender or '',
+            'message_id': message_id or '',
             'raw_line': line[:200], 'src_file': srcfile,
         })
     return rows
@@ -85,9 +122,11 @@ def parse(txt, qdate, sender, srcfile):
 def main(folder, out):
     allrows, report = [], []
     for f in sorted(glob.glob(os.path.join(folder, '*.eml'))):
-        txt = body_text(f)
-        d, s = original_date(txt), original_sender(txt)
-        rows = parse(txt, d, s, os.path.basename(f))
+        m = load_msg(f)
+        txt = msg_text(m)
+        d = original_date(txt) or header_date(m)
+        s = original_sender(txt) or header_sender(m)
+        rows = parse(txt, d, s, os.path.basename(f), header_message_id(m))
         allrows += rows
         report.append((os.path.basename(f)[:52], d, s, len(rows),
                        len({r['origin_port'] for r in rows}),
@@ -98,7 +137,7 @@ def main(folder, out):
     for r in report:
         print(f"{r[0]:54s} {str(r[1]):11s} {str(r[2])[:22]:22s} {r[3]:5d} {r[4]:5d}  {','.join(r[5])[:28]}")
 
-    with open(out, 'w', newline='') as fh:
+    with open(out, 'w', newline='', encoding='utf-8') as fh:
         w = csv.DictWriter(fh, fieldnames=list(allrows[0].keys()))
         w.writeheader()
         w.writerows(allrows)

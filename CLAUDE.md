@@ -19,6 +19,12 @@ branch handles a real case found in production email:
   67 phantom rows under origin `GOOD DAY`, destination `YOU`.
 - Forwarded mail carries the forward date in the header. The real send date
   is in the body. Never take `quote_date` from a forwarded header.
+- Mail received **direct** from the agent has no `Sent:` block at all, so
+  there the RFC `Date:`/`From:` headers *are* the original and are the only
+  source. Body first, header as fallback — never the other way round.
+- `raw_line` is whitespace-normalised (NBSP included) before storage. It is
+  part of the dedupe key, so both parsers must normalise identically or the
+  same quote stores twice.
 
 Extending is fine. Rewriting from scratch loses all of the above, because
 these cases are in the fixture, not in general knowledge.
@@ -42,7 +48,14 @@ change it.
 
 ## Data facts
 
-- 1,541 quotes, 14 emails (2 agent typos excluded), 18 Jun – 17 Jul 2026
+- 10,508 quotes, 86 emails, 6 Mar – 21 Aug 2026, 66 distinct quote dates
+- Two archives, overlapping: `fixtures/emails/` (14 forwards, the regression
+  set) and `mails/` (72 direct mails). ~1,300 rows appear in both — the *same*
+  mail, once direct and once forwarded. Dedupe is row-level, not file-level.
+- One real 63-day hole, 25 Mar → 27 May 2026. No mail was archived. The chart
+  breaks the line across it. Never interpolate it.
+- Rates roughly tripled off the mid-July floor: Shenzhen → Nhava Sheva 40ft
+  ran $1,586 (17 Jul) → $2,881 (21 Aug).
 - 9 origin ports → 3 destinations (Nhava Sheva, Chennai, Kolkata)
 - Agent writes `CCU` for Kolkata — normalise on ingest
 - Two senders, one agency: `as01@` and `as23@oceanstarsz.com`
@@ -52,8 +65,9 @@ change it.
 
 ## Regression fixture
 
-`fixtures/ocean_star_rates.csv` is known-good parser output. Any parser change
-must still yield:
+`fixtures/ocean_star_rates.csv` is known-good parser output **over
+`fixtures/emails/` only** — 14 forwards, not the whole archive. Any parser
+change must still yield:
 
 - 1,541 rows total
 - Shenzhen → Nhava Sheva, 2026-07-17: 20ft mean **$1560** (n=20),

@@ -24,6 +24,33 @@ const DEST_ALIAS = {
 const RATE_RE = /USD\s*(\d{3,5})\s*\/\s*(\d{3,5}|40HQ|40GP|20GP)/i;
 const PORT_RE = /^([A-Z][A-Z\s.&-]*?)\s+TO\s+([A-Z][A-Z\s.&-]*?)\s*$/i;
 
+// Forward markers. A forwarded mail's headers carry the FORWARD date and the
+// forwarder's address; the agent's real send date and rep are in the quoted
+// block. Mirrors SENT_RE / FROM_RE in extract.py -- keep the two in step.
+const SENT_RE = /Sent:?\s*\n?\s*(\d{1,2}\s+\w+\s+\d{4})/i;
+const FROM_RE = /From:?\s*\n?\s*([^<\n]+)<([^>]+)>/i;
+
+const MONTHS = {
+  jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+  jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
+};
+
+/** "17 July 2026" -> "2026-07-17". Null if the body has no Sent: block. */
+function bodyDate(text) {
+  const m = SENT_RE.exec(text);
+  if (!m) return null;
+  const [dd, mon, yyyy] = m[1].trim().split(/\s+/);
+  const mi = MONTHS[String(mon).slice(0, 3).toLowerCase()];
+  if (mi === undefined) return null;
+  const d = new Date(Date.UTC(Number(yyyy), mi, Number(dd)));
+  return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+}
+
+function bodySender(text) {
+  const m = FROM_RE.exec(text);
+  return m ? m[2].trim().toLowerCase() : null;
+}
+
 // HTML -> text. Kills tags, decodes the entities that actually appear,
 // and normalises NBSP (agent's HTML has "NHAVA\u00a0SHEVA" — this splits
 // your data in two if left alone).
@@ -32,7 +59,13 @@ function htmlToText(html) {
     .replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, '')
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/(p|div|tr|td|li|h\d)>/gi, '\n')
-    .replace(/<[^>]+>/g, ' ')
+    // Every remaining tag becomes a line break, NOT a space. BeautifulSoup's
+    // get_text('\n') -- what extract.py uses -- separates every text node, so
+    // each cell lands on its own line. A space instead merges a lane's rate
+    // block into one long line and the 120-char guard silently drops it:
+    // 17 rows across the forwarded mails, all ICD lines like
+    // "CMA via pip/mun USD3314/40HQ ETD 11-JULY".
+    .replace(/<[^>]+>/g, '\n')
     .replace(/&nbsp;|\u00a0/g, ' ')
     .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
@@ -104,14 +137,16 @@ for (const item of $input.all()) {
   const html = j.html || j.textAsHtml || '';
   const text = html ? htmlToText(html) : (j.text || j.textPlain || '');
 
-  // quote_date = when the AGENT sent it. Gmail Trigger's date is the
-  // received date, which is the same thing for a direct mail — but if you
-  // ever ingest forwards, prefer the header over anything in the body.
+  // quote_date = when the AGENT sent it, never when it was forwarded on.
+  // Direct mail has no "Sent:" block, so the header IS the original; a
+  // forward's header is the forward date and must lose to the body.
   const sentAt = j.date || j.internalDate || new Date().toISOString();
-  const quoteDate = new Date(sentAt).toISOString().slice(0, 10);
+  const headerDate = new Date(sentAt).toISOString().slice(0, 10);
+  const quoteDate = bodyDate(text) || headerDate;
 
-  const from = (j.from?.value?.[0]?.address || j.from?.text || j.From || '')
+  const headerFrom = (j.from?.value?.[0]?.address || j.from?.text || j.From || '')
     .toLowerCase().replace(/.*<|>.*/g, '');
+  const from = bodySender(text) || headerFrom;
 
   const messageId = j.messageId || j.id || `${from}:${sentAt}`;
   const subject = j.subject || '';
