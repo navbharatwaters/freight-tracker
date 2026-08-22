@@ -46,12 +46,19 @@ export default function AdminClient() {
   const [pasteDate, setPasteDate] = useState(new Date().toISOString().slice(0, 10));
   const [pasteSender, setPasteSender] = useState("");
 
+  const [connError, setConnError] = useState<string | null>(null);
+
   const refresh = useCallback(async () => {
-    const r = await fetch("/api/admin/recent", { cache: "no-store" });
-    if (r.ok) {
-      const j = await r.json();
+    try {
+      const r = await fetch("/api/admin/recent", { cache: "no-store" });
+      const j = await r.json().catch(() => ({}));
       setMails(j.mails ?? []);
       setHealth(j.health ?? null);
+      // A dead database used to fail silently here, leaving a blank page and
+      // no reason. Say so instead.
+      setConnError(r.ok ? null : j.error || `recent failed: HTTP ${r.status}`);
+    } catch (e) {
+      setConnError(e instanceof Error ? e.message : String(e));
     }
   }, []);
 
@@ -122,6 +129,16 @@ export default function AdminClient() {
             or paste the mail body. Re-uploading the same mail is safe — rows dedupe by message id.
           </p>
         </header>
+
+        {connError && (
+          <div className="text-sm border border-rose-200 rounded p-3 bg-rose-50">
+            <p className="font-medium text-rose-800">Database unreachable</p>
+            <p className="text-xs text-rose-700 mt-1 break-words">{connError}</p>
+            <p className="text-xs text-rose-700 mt-1">
+              Ingest will fail until this is fixed. Check <code>DATABASE_URL</code> on the server.
+            </p>
+          </div>
+        )}
 
         {health && (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">

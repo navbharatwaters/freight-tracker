@@ -1,79 +1,37 @@
-import { spawn } from "node:child_process";
-import { promises as fs } from "node:fs";
-import path from "node:path";
-import os from "node:os";
 import crypto from "node:crypto";
 import { pool } from "./db";
+import {
+  parseEml,
+  parsePastedBody,
+  type MailParseResult,
+  type ParsedRow,
+} from "./parse-mail";
 
-export type ParsedRow = {
-  quote_date: string | null;
-  origin_port: string;
-  dest_port: string;
-  rate_20: number | null;
-  rate_40: number | null;
-  raw_line: string;
-  sender: string | null;
-  source: string;
-};
+export type { ParsedRow };
+export type ParseResult = MailParseResult;
 
-export type ParseResult = {
-  message_id: string | null;
-  sent_at: string | null;
-  subject: string;
-  sender: string | null;
-  source: string;
-  quote_date: string | null;
-  rows: ParsedRow[];
-  warnings: string[];
-};
-
-const PY = process.env.PYTHON_BIN || "python3";
-const PARSER = path.join(process.cwd(), "parser", "ingest_eml.py");
-
-async function runPython(args: string[], stdin?: Buffer | string): Promise<ParseResult> {
-  return new Promise((resolve, reject) => {
-    const p = spawn(PY, [PARSER, ...args]);
-    const out: Buffer[] = [];
-    const err: Buffer[] = [];
-    p.stdout.on("data", (d) => out.push(d));
-    p.stderr.on("data", (d) => err.push(d));
-    p.on("error", reject);
-    p.on("close", (code) => {
-      const stdout = Buffer.concat(out).toString("utf8");
-      const stderr = Buffer.concat(err).toString("utf8");
-      if (code !== 0) {
-        return reject(new Error(`parser exit ${code}: ${stderr || stdout}`));
-      }
-      try {
-        resolve(JSON.parse(stdout));
-      } catch (e) {
-        reject(new Error(`parser JSON error: ${(e as Error).message} / raw: ${stdout.slice(0, 500)}`));
-      }
-    });
-    if (stdin !== undefined) {
-      p.stdin.end(stdin);
-    } else {
-      p.stdin.end();
-    }
-  });
-}
-
+/**
+ * Parsing runs IN PROCESS. It used to spawn `python3 parser/ingest_eml.py`,
+ * which required a Python interpreter, BeautifulSoup, and the parser/
+ * directory to all be present next to the built app on the deploy host --
+ * none of which a Next.js production bundle ships. That is why /admin ingest
+ * failed in production for both the .eml drop and the paste box.
+ *
+ * lib/parse-mail.ts is a literal port of the Python matcher and is verified
+ * row-for-row against it over all 86 archived mails by
+ * tests/xcheck_parsers.mjs. Python remains the offline batch path.
+ */
 export async function parseEmlBytes(bytes: Buffer, filename = "upload.eml"): Promise<ParseResult> {
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "ft-"));
-  const tmpPath = path.join(tmpDir, filename.replace(/[^\w.\-]/g, "_"));
-  try {
-    await fs.writeFile(tmpPath, bytes);
-    return await runPython([tmpPath]);
-  } finally {
-    await fs.rm(tmpDir, { recursive: true, force: true });
-  }
+  return parseEml(bytes, filename);
 }
 
-export async function parsePasted(body: string, date: string, sender?: string, subject?: string): Promise<ParseResult> {
-  const args = ["--paste", "--date", date];
-  if (sender) args.push("--sender", sender);
-  if (subject) args.push("--subject", subject);
-  return runPython(args, body);
+export async function parsePasted(
+  body: string,
+  date: string,
+  sender?: string,
+  subject?: string
+): Promise<ParseResult> {
+  return parsePastedBody(body, date, sender, subject);
 }
 
 export type InsertResult = {
@@ -90,8 +48,9 @@ export type InsertResult = {
 };
 
 export async function insertParsed(parsed: ParseResult): Promise<InsertResult> {
-  // Synthesize a message_id when none present (e.g. pasted body) so the dedupe
-  // unique index (partial: WHERE message_id IS NOT NULL) still catches re-uploads.
+  // Synthesize a message_id when none present (e.g. pasted body) so the mail
+  // log, whose PK is message_id, still gets one row per paste. Row dedupe does
+  // not depend on this -- it keys on (date, lane, source, sender, raw_line).
   const messageId =
     parsed.message_id ??
     `<paste-${crypto
@@ -115,7 +74,7 @@ export async function insertParsed(parsed: ParseResult): Promise<InsertResult> {
         `INSERT INTO freight_quotes
            (quote_date, origin_port, dest_port, rate_20, rate_40, source, sender, message_id, raw_line)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-         ON CONFLICT (quote_date, origin_port, dest_port, source, raw_line)
+         ON CONFLICT (quote_date, origin_port, dest_port, source, COALESCE(sender, ''), raw_line)
            DO NOTHING
          RETURNING id`,
         [

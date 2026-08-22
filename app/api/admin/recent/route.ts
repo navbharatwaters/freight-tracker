@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
+import { describeError } from "@/lib/errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
+  try {
   const mails = await query<{
     message_id: string;
     sent_at: string;
@@ -26,7 +28,26 @@ export async function GET() {
     days_since_last: number | null;
     rows_last_30d: string;
     failed_mails_30d: string;
-  }>(`SELECT * FROM freight_pipeline_health`);
+  }>(
+    // to_char, not SELECT * -- node-pg hands a DATE back as a JS Date, which
+    // JSON.stringify renders as a full UTC timestamp. That both overflowed the
+    // admin stat box and shifted the date a day backwards for anyone east of
+    // UTC. Format it in Postgres and it stays a plain calendar date.
+    `SELECT
+       to_char(last_quote_date, 'YYYY-MM-DD') AS last_quote_date,
+       days_since_last,
+       rows_last_30d,
+       failed_mails_30d
+     FROM freight_pipeline_health`
+  );
 
   return NextResponse.json({ mails, health });
+  } catch (e) {
+    // The admin page must still render when the database is unreachable --
+    // otherwise the operator sees an empty screen with no clue why.
+    return NextResponse.json(
+      { mails: [], health: null, error: describeError(e) },
+      { status: 503 }
+    );
+  }
 }

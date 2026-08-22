@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { parseEmlBytes, parsePasted, insertParsed, type InsertResult } from "@/lib/ingest";
+import { describeError } from "@/lib/errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -43,7 +44,7 @@ export async function POST(req: Request) {
           const res = await insertParsed(parsed);
           results.push({ filename: f.name, ...res });
         } catch (e) {
-          errors.push({ filename: f.name, error: e instanceof Error ? e.message : String(e) });
+          errors.push({ filename: f.name, error: describeError(e) });
         }
       }
 
@@ -53,7 +54,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "unsupported content-type" }, { status: 415 });
   } catch (e) {
     return NextResponse.json(
-      { error: e instanceof Error ? e.message : String(e) },
+      { error: describeError(e) },
       { status: 500 }
     );
   }
