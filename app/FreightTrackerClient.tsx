@@ -47,10 +47,22 @@ export default function FreightTrackerClient({
   data,
   error,
   source = "db",
+  embed = false,
 }: {
   data: UiRow[];
   error: string | null;
   source?: "db" | "static";
+  /**
+   * Rendered inside a partner's page (iKargos) rather than standing alone.
+   * Drops only the outer chrome -- the wordmark, the h1 and the tagline, which
+   * the host page supplies itself, plus the full-height page padding.
+   *
+   * Everything that carries meaning stays: the controls, the chart, the table,
+   * the quote counts, the thin-data warning and the methodology/limits note.
+   * That note is the accuracy and liability statement, and embed visitors are
+   * strangers with no other context -- they need it most. Do not strip it.
+   */
+  embed?: boolean;
 }) {
   const [dest, setDest] = useState<string>("NHAVA SHEVA");
   const [origin, setOrigin] = useState<string>("SHENZHEN");
@@ -138,13 +150,22 @@ export default function FreightTrackerClient({
   // and let the hover marker do the work.
   const dotSize = points.length > 45 ? 0 : points.length > 25 ? 2 : 3;
 
+  // Embedded, these states sit inside a partner's page: no min-h-screen (it
+  // would leave a screen-tall blank hole in their layout) and no heading of
+  // our own. Also no raw error text -- that can name our host or database, and
+  // a stranger on ikargos.com can do nothing with it. The detail stays on the
+  // standalone page, where the operator reads it.
+  const shellClass = embed
+    ? "bg-white text-slate-900 p-4"
+    : "min-h-screen bg-white text-slate-900 p-10";
+
   if (error) {
     return (
-      <div className="min-h-screen bg-white text-slate-900 p-10">
+      <div className={shellClass}>
         <div className="max-w-2xl mx-auto space-y-3">
-          <h1 className="text-xl font-semibold">Freight Tracker</h1>
+          {!embed && <h1 className="text-xl font-semibold">Freight Tracker</h1>}
           <p className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded p-3">
-            Data unavailable. {error}
+            {embed ? "Rate data is temporarily unavailable. Please check back shortly." : `Data unavailable. ${error}`}
           </p>
         </div>
       </div>
@@ -152,9 +173,9 @@ export default function FreightTrackerClient({
   }
   if (!data.length) {
     return (
-      <div className="min-h-screen bg-white text-slate-900 p-10">
+      <div className={shellClass}>
         <div className="max-w-2xl mx-auto space-y-3">
-          <h1 className="text-xl font-semibold">Freight Tracker</h1>
+          {!embed && <h1 className="text-xl font-semibold">Freight Tracker</h1>}
           <p className="text-sm text-slate-600">No rate data yet. Check back once the pipeline has ingested at least one email.</p>
         </div>
       </div>
@@ -162,17 +183,27 @@ export default function FreightTrackerClient({
   }
 
   return (
-    <div className="min-h-screen bg-white text-slate-900 p-5 md:p-10">
+    <div
+      className={
+        embed
+          ? "bg-white text-slate-900 p-4 md:p-5"
+          : "min-h-screen bg-white text-slate-900 p-5 md:p-10"
+      }
+    >
       <div className="max-w-4xl mx-auto space-y-7">
-        <header className="border-b border-slate-200 pb-5">
-          <p className="text-[11px] tracking-[0.22em] uppercase text-slate-500">iKargos</p>
-          <h1 className="text-2xl md:text-4xl font-semibold mt-2 tracking-tight">
-            China → India Freight Tracker
-          </h1>
-          <p className="text-sm text-slate-600 mt-2">
-            Indicative spot rates · updated when carriers revise pricing, not on a fixed schedule
-          </p>
-          <div className="flex flex-wrap items-center gap-2 mt-3">
+        <header className={embed ? "" : "border-b border-slate-200 pb-5"}>
+          {!embed && (
+            <>
+              <p className="text-[11px] tracking-[0.22em] uppercase text-slate-500">iKargos</p>
+              <h1 className="text-2xl md:text-4xl font-semibold mt-2 tracking-tight">
+                China → India Freight Tracker
+              </h1>
+              <p className="text-sm text-slate-600 mt-2">
+                Indicative spot rates · updated when carriers revise pricing, not on a fixed schedule
+              </p>
+            </>
+          )}
+          <div className={`flex flex-wrap items-center gap-2 ${embed ? "" : "mt-3"}`}>
             <span className="inline-flex items-center gap-1.5 text-xs bg-slate-100 text-slate-700 rounded-full px-2.5 py-1">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
               Rates as of {fmtLong(ts(LATEST))}

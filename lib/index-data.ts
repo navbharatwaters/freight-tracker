@@ -56,6 +56,132 @@ async function fromStatic(): Promise<UiRow[]> {
   return JSON.parse(await fs.readFile(file, "utf8")) as UiRow[];
 }
 
+// ============================================================
+// Presentation-ready summary, for partner sites (iKargos).
+//
+// The payload carries its own COLUMNS, HEADING and NOTE. The partner page is a
+// blind map() over what it receives -- it does no maths, no formatting, no date
+// handling and hard-codes no column list.
+//
+// That is the whole point: adding a lane, adding a column, rewording the
+// disclaimer or changing the averaging becomes a deploy HERE and nothing on
+// their side. Their page is written once. Keep it that way -- if you find
+// yourself needing the partner to change their component to ship a feature,
+// the change belongs in this payload instead.
+// ============================================================
+
+export type SummaryColumn = {
+  key: string;
+  label: string;
+  align?: "left" | "right";
+};
+
+export type SummaryRow = {
+  lane: string;
+  origin: string;
+  dest: string;
+  r20: string;
+  r40: string;
+  n: number;
+  delta: string;
+  /**
+   * This lane's own most recent quoted date. Today every lane is quoted on the
+   * same day, so it is redundant -- but if the agent ever stops quoting a lane,
+   * a stale row would otherwise sit beside fresh ones with nothing to say so.
+   * Carried as data, not as a column: surfacing it later is a change here, with
+   * no work on the partner's side.
+   */
+  as_of: string;
+};
+
+export type IndexSummary = {
+  as_of: string | null;
+  heading: string;
+  columns: SummaryColumn[];
+  rows: SummaryRow[];
+  note: string;
+  source: IndexSource;
+  updated_at: string;
+};
+
+const DELTA_WINDOW_DAYS = 30;
+const usd = (v: number | null) => (v == null ? "—" : `$${v.toLocaleString("en-US")}`);
+const title = (s: string) => s.charAt(0) + s.slice(1).toLowerCase();
+const laneName = (origin: string, dest: string) => `${title(origin)} → ${title(dest)}`;
+
+export async function getIndexSummary(): Promise<IndexSummary> {
+  const { rows, source } = await getIndexRows();
+
+  const asOf = rows.reduce((m, r) => (r.date > m ? r.date : m), "");
+
+  // One row per lane, at its own most recent observation. Lanes are quoted on
+  // different days, so pinning every lane to the newest global date would drop
+  // any lane the agent did not mention that day.
+  const byLane = new Map<string, UiRow[]>();
+  for (const r of rows) {
+    const k = `${r.origin}|${r.dest}`;
+    const bucket = byLane.get(k);
+    if (bucket) bucket.push(r);
+    else byLane.set(k, [r]);
+  }
+
+  const out: SummaryRow[] = [];
+  for (const series of byLane.values()) {
+    series.sort((a, b) => a.date.localeCompare(b.date));
+    const latest = series[series.length - 1];
+    if (!latest) continue;
+
+    // Compare against the newest observation at least DELTA_WINDOW_DAYS old.
+    // Mail is irregular, so "30 days ago" rarely lands on an actual quote date.
+    const cutoff = new Date(
+      new Date(`${latest.date}T00:00:00Z`).getTime() - DELTA_WINDOW_DAYS * 86_400_000
+    )
+      .toISOString()
+      .slice(0, 10);
+    const prior = [...series].reverse().find((r) => r.date <= cutoff);
+
+    let delta = "—";
+    if (prior?.rate40 && latest.rate40) {
+      const pct = ((latest.rate40 - prior.rate40) / prior.rate40) * 100;
+      delta = `${pct > 0 ? "+" : ""}${pct.toFixed(1)}%`;
+    }
+
+    out.push({
+      lane: laneName(latest.origin, latest.dest),
+      origin: latest.origin,
+      dest: latest.dest,
+      r20: usd(latest.rate20),
+      r40: usd(latest.rate40),
+      n: latest.n40 || latest.n20,
+      delta,
+      as_of: latest.date,
+    });
+  }
+
+  out.sort((a, b) => a.dest.localeCompare(b.dest) || a.origin.localeCompare(b.origin));
+
+  return {
+    as_of: asOf || null,
+    heading: "China → India ocean freight — indicative spot rates",
+    columns: [
+      { key: "lane", label: "Lane" },
+      { key: "r20", label: "20ft", align: "right" },
+      { key: "r40", label: "40ft / 40HQ", align: "right" },
+      { key: "n", label: "Quotes", align: "right" },
+      { key: "delta", label: `${DELTA_WINDOW_DAYS}-day change`, align: "right" },
+    ],
+    rows: out,
+    note:
+      "Each figure is the simple average of every carrier quotation received for that lane " +
+      "on its most recent quoted date. 40HQ is treated as 40ft. Rates are compiled from a " +
+      "single freight forwarding source and indicate market direction only — this is not a " +
+      "quotation and not a booking offer. Actual rates vary by volume, commodity, equipment " +
+      "availability and sailing date.",
+    source,
+    updated_at: new Date().toISOString(),
+  };
+}
+
 export async function getIndexRows(): Promise<{
   rows: UiRow[];
   source: IndexSource;
