@@ -29,6 +29,45 @@ Parsing now runs in process via `lib/parse-mail.ts`. Keep it that way: the
 request path must not depend on a Python interpreter, a pip package, or files
 outside the Next build output. `parser/*.py` is for offline batches only.
 
+## The partner embed (iKargos)
+
+`/embed` is the only framable path. Two things must agree, or framing breaks:
+
+- `next.config.mjs` sends `Content-Security-Policy: frame-ancestors` on
+  `/embed` only. **The origin allowlist lives there, in git** — not in Caddy.
+- The Caddyfile `@embed` / `@notembed` split stops sending
+  `X-Frame-Options: SAMEORIGIN` on `/embed` only. Caddy adds it to every
+  response otherwise, and relying on CSP to override XFO is a thin margin for
+  a partner-facing page.
+
+Adding a partner origin is a one-line change in `next.config.mjs` and a
+redeploy. Nothing in Caddy, nothing on the partner's server.
+
+After any Caddyfile change, re-verify all four boundaries:
+
+```bash
+B=https://tracker.navbharatwater.us
+curl -s -D - -o /dev/null $B/embed | grep -iE 'content-security-policy|x-frame'  # CSP, no XFO
+curl -s -D - -o /dev/null $B/      | grep -iE 'content-security-policy|x-frame'  # XFO, no CSP
+curl -s -o /dev/null -w '%{http_code}\n' $B/admin                                # 401
+curl -s -o /dev/null -w '%{http_code}\n' -X POST $B/api/admin/ingest             # 401
+```
+
+Handoff for the partner's developers: `docs/ikargos-embed-handoff.md`.
+
+### Known gap: no rate limiting on the public API
+
+`/api/index/*` is public and uncapped. The DB is protected — ISR collapses all
+traffic to one query per 15 minutes — so the exposure is bandwidth and CPU
+serving cached JSON, the same as any public page.
+
+It is not fixed because stock Caddy has no `rate_limit` module. Adding it means
+rebuilding the binary with `xcaddy` and swapping the proxy that fronts three
+production apps (`freight-tracker`, `nwpl-website`, `export-boe`). That is a
+worse risk than the exposure. If it becomes a real problem, put Cloudflare in
+front, or do the `xcaddy` rebuild in a maintenance window with all three sites
+verified afterwards.
+
 ## Order matters
 
 The app now infers its `ON CONFLICT` target from a **new** unique index. Deploy

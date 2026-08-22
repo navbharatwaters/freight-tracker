@@ -106,7 +106,14 @@ export type IndexSummary = {
 
 const DELTA_WINDOW_DAYS = 30;
 const usd = (v: number | null) => (v == null ? "—" : `$${v.toLocaleString("en-US")}`);
-const title = (s: string) => s.charAt(0) + s.slice(1).toLowerCase();
+// Per WORD, not per string: ports are stored upper-case and several are two
+// words, so capitalising only the first character yields "Nhava sheva".
+const title = (s: string) =>
+  s
+    .toLowerCase()
+    .split(/\s+/)
+    .map((w) => (w ? w.charAt(0).toUpperCase() + w.slice(1) : w))
+    .join(" ");
 const laneName = (origin: string, dest: string) => `${title(origin)} → ${title(dest)}`;
 
 export async function getIndexSummary(): Promise<IndexSummary> {
