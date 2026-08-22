@@ -12,7 +12,17 @@ export async function GET() {
       days_since_last: number | null;
       rows_last_30d: number;
       failed_mails_30d: number;
-    }>(`SELECT * FROM freight_pipeline_health`);
+    }>(
+      // Format the date in Postgres. node-pg hands a DATE back as a JS Date,
+      // which JSON renders as a UTC timestamp -- "2026-07-21T22:00:00.000Z"
+      // for what is actually 2026-07-22, a day early for anyone east of UTC.
+      `SELECT
+         to_char(last_quote_date, 'YYYY-MM-DD') AS last_quote_date,
+         days_since_last,
+         rows_last_30d,
+         failed_mails_30d
+       FROM freight_pipeline_health`
+    );
     return NextResponse.json({ status: "ok", ...health });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
