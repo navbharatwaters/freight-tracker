@@ -125,8 +125,14 @@ export default function AdminClient() {
           <p className="text-[11px] tracking-[0.22em] uppercase text-slate-500">iKargos · admin</p>
           <h1 className="text-2xl md:text-3xl font-semibold mt-2 tracking-tight">Ingest rate mails</h1>
           <p className="text-sm text-slate-600 mt-2">
-            Drop today&apos;s .eml file (Outlook: drag from list · Gmail: More → Download original)
-            or paste the mail body. Re-uploading the same mail is safe — rows dedupe by message id.
+            Drop rate emails as .eml (Outlook: drag from the message list · Gmail: open the mail,
+            three-dot menu → Download message) or paste the mail body. Several files at once is
+            fine.
+          </p>
+          <p className="text-sm text-slate-600 mt-1">
+            Re-uploading the same mail is safe — a quote is matched on its date, lane, source,
+            sender and the original text of the line, so a repeat inserts nothing. Forwarded mail
+            works too: the real send date is read from the forwarded body, not the forward header.
           </p>
         </header>
 
