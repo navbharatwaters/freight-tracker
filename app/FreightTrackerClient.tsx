@@ -222,20 +222,6 @@ export default function FreightTrackerClient({
         <div className="flex flex-wrap gap-3">
           <div>
             <label className="block text-[11px] uppercase tracking-wider text-slate-500 mb-1.5">
-              Destination
-            </label>
-            <select
-              value={dest}
-              onChange={(e) => setDest(e.target.value)}
-              className="border border-slate-300 rounded-md px-3 py-2 text-sm bg-white min-w-[160px]"
-            >
-              {DESTS.map((d) => (
-                <option key={d} value={d}>{d}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-[11px] uppercase tracking-wider text-slate-500 mb-1.5">
               Origin port
             </label>
             <select
@@ -245,6 +231,20 @@ export default function FreightTrackerClient({
             >
               {origins.map((o) => (
                 <option key={o} value={o}>{o}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-[11px] uppercase tracking-wider text-slate-500 mb-1.5">
+              Destination
+            </label>
+            <select
+              value={dest}
+              onChange={(e) => setDest(e.target.value)}
+              className="border border-slate-300 rounded-md px-3 py-2 text-sm bg-white min-w-[160px]"
+            >
+              {DESTS.map((d) => (
+                <option key={d} value={d}>{d}</option>
               ))}
             </select>
           </div>
