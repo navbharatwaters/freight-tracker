@@ -1,7 +1,8 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+  ComposedChart, Line, Area, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+  ResponsiveContainer,
 } from "recharts";
 import type { UiRow } from "./page";
 import LeadForm from "./LeadForm";
@@ -14,6 +15,14 @@ const RANGES = [
   { key: "6M", label: "6 months", days: 182 },
   { key: "ALL", label: "All", days: null },
 ] as const;
+
+const STYLES = [
+  { key: "line", label: "Line" },
+  { key: "area", label: "Area" },
+  { key: "bars", label: "Bars" },
+] as const;
+type ChartStyle = (typeof STYLES)[number]["key"];
+const STYLE_STORAGE_KEY = "freight-chart-style";
 
 // Mail arrives when rates move, not on a schedule -- 5-8 day gaps are normal
 // and must still be drawn as one continuous line. A silence beyond this is
@@ -68,6 +77,18 @@ export default function FreightTrackerClient({
   const [dest, setDest] = useState<string>("NHAVA SHEVA");
   const [origin, setOrigin] = useState<string>("SHENZHEN");
   const [range, setRange] = useState<string>("ALL");
+  const [chartStyle, setChartStyle] = useState<ChartStyle>("line");
+
+  // Remembered per browser, not per visit -- read after mount so the
+  // server-rendered HTML and the first client render still match.
+  useEffect(() => {
+    const saved = window.localStorage.getItem(STYLE_STORAGE_KEY);
+    if (saved === "line" || saved === "area" || saved === "bars") setChartStyle(saved);
+  }, []);
+  const selectStyle = (s: ChartStyle) => {
+    setChartStyle(s);
+    window.localStorage.setItem(STYLE_STORAGE_KEY, s);
+  };
 
   const LATEST = useMemo(
     () => data.reduce((m, r) => (r.date > m ? r.date : m), ""),
@@ -123,6 +144,18 @@ export default function FreightTrackerClient({
     });
     return out;
   }, [points]);
+
+  // Bars style: color each 40ft update by whether it rose or fell since the
+  // previous real observation (gap markers carry no rate and are skipped).
+  const barColors = useMemo(() => {
+    let prev: number | null = null;
+    return series.map((s) => {
+      if (s.gap || s.rate40 == null) return "#cbd5e1";
+      const color = prev == null || s.rate40 >= prev ? "#e11d48" : "#059669";
+      prev = s.rate40;
+      return color;
+    });
+  }, [series]);
 
   const latest = points[points.length - 1];
   const first = points[0];
@@ -263,6 +296,27 @@ export default function FreightTrackerClient({
               ))}
             </div>
           </div>
+          <div>
+            <label className="block text-[11px] uppercase tracking-wider text-slate-500 mb-1.5">
+              Chart style
+            </label>
+            <div className="inline-flex rounded-md border border-slate-300 overflow-hidden">
+              {STYLES.map((s) => (
+                <button
+                  key={s.key}
+                  type="button"
+                  onClick={() => selectStyle(s.key)}
+                  className={`px-3 py-2 text-sm border-l first:border-l-0 border-slate-300 ${
+                    chartStyle === s.key
+                      ? "bg-slate-900 text-white"
+                      : "bg-white text-slate-600 hover:bg-slate-50"
+                  }`}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-4">
@@ -290,7 +344,17 @@ export default function FreightTrackerClient({
             Average rate per container, USD · each dot is one rate update from the agent
           </p>
           <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={series} margin={{ top: 5, right: 8, bottom: 5, left: -12 }}>
+            <ComposedChart data={series} margin={{ top: 5, right: 8, bottom: 5, left: -12 }}>
+              <defs>
+                <linearGradient id="fill20" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#94a3b8" stopOpacity={0.35} />
+                  <stop offset="100%" stopColor="#94a3b8" stopOpacity={0.02} />
+                </linearGradient>
+                <linearGradient id="fill40" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#0f766e" stopOpacity={0.55} />
+                  <stop offset="100%" stopColor="#0f766e" stopOpacity={0.03} />
+                </linearGradient>
+              </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
               <XAxis
                 dataKey="t"
@@ -322,28 +386,69 @@ export default function FreightTrackerClient({
                 }}
               />
               <Legend iconType="line" wrapperStyle={{ fontSize: 12, paddingTop: 10 }} />
-              {/* connectNulls stays OFF: the null spacers are the gap breaks. */}
-              <Line
-                type="linear"
-                dataKey="rate20"
-                name="20ft"
-                stroke="#94a3b8"
-                strokeWidth={2}
-                dot={dotSize ? { r: dotSize } : false}
-                activeDot={{ r: 4 }}
-                connectNulls={false}
-              />
-              <Line
-                type="linear"
-                dataKey="rate40"
-                name="40ft"
-                stroke="#0f766e"
-                strokeWidth={2.5}
-                dot={dotSize ? { r: dotSize + 0.5 } : false}
-                activeDot={{ r: 4.5 }}
-                connectNulls={false}
-              />
-            </LineChart>
+              {/* connectNulls stays OFF throughout: the null spacers are the gap breaks. */}
+
+              {chartStyle === "bars" && (
+                <Bar dataKey="rate40" name="40ft" radius={[2, 2, 0, 0]}>
+                  {series.map((s, i) => (
+                    <Cell key={i} fill={barColors[i]} />
+                  ))}
+                </Bar>
+              )}
+
+              {chartStyle === "area" ? (
+                <Area
+                  type="linear"
+                  dataKey="rate20"
+                  name="20ft"
+                  stroke="#94a3b8"
+                  strokeWidth={1.75}
+                  fill="url(#fill20)"
+                  dot={false}
+                  activeDot={{ r: 4 }}
+                  connectNulls={false}
+                />
+              ) : (
+                <Line
+                  type="linear"
+                  dataKey="rate20"
+                  name="20ft"
+                  stroke="#94a3b8"
+                  strokeWidth={chartStyle === "bars" ? 1.5 : 2}
+                  strokeDasharray={chartStyle === "bars" ? "3 3" : undefined}
+                  dot={chartStyle === "bars" ? false : dotSize ? { r: dotSize } : false}
+                  activeDot={{ r: 4 }}
+                  connectNulls={false}
+                />
+              )}
+
+              {chartStyle === "area" && (
+                <Area
+                  type="linear"
+                  dataKey="rate40"
+                  name="40ft"
+                  stroke="#0f766e"
+                  strokeWidth={2.25}
+                  fill="url(#fill40)"
+                  dot={false}
+                  activeDot={{ r: 4.5 }}
+                  connectNulls={false}
+                />
+              )}
+
+              {chartStyle === "line" && (
+                <Line
+                  type="linear"
+                  dataKey="rate40"
+                  name="40ft"
+                  stroke="#0f766e"
+                  strokeWidth={2.5}
+                  dot={dotSize ? { r: dotSize + 0.5 } : false}
+                  activeDot={{ r: 4.5 }}
+                  connectNulls={false}
+                />
+              )}
+            </ComposedChart>
           </ResponsiveContainer>
 
           <p className="text-[11px] text-slate-500 mt-3 leading-relaxed">
