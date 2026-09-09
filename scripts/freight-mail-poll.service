@@ -1,0 +1,11 @@
+[Unit]
+Description=Poll freight-rates mailbox and ingest new rate mails
+After=network-online.target freight-tracker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/apps/freight-tracker
+EnvironmentFile=/opt/apps/freight-tracker/mail-poll.env
+ExecStart=/usr/bin/python3 /opt/apps/freight-tracker/scripts/mail_poll.py

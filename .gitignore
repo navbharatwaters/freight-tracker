@@ -27,3 +27,6 @@ next-env.d.ts
 # site and the chart build without these. fixtures/emails/ stays tracked as
 # the regression corpus.
 /mails/*.eml
+
+# mailbox password for scripts/mail_poll.py -- lives only on the server.
+/scripts/mail-poll.env
