@@ -112,3 +112,27 @@ SELECT
       WHERE parse_status <> 'ok'
         AND processed_at > now() - INTERVAL '30 days') AS failed_mails_30d
 FROM freight_quotes;
+
+
+-- ------------------------------------------------------------
+-- 5. LEADS: booking enquiries from the "Contact us" form below the
+--    chart (see migration_002_add_leads.sql for the on-server rollout).
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS leads (
+    id            BIGSERIAL PRIMARY KEY,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    name          TEXT        NOT NULL,
+    email         TEXT        NOT NULL,
+    phone         TEXT,
+    company       TEXT,
+
+    origin_port   TEXT,
+    dest_port     TEXT,
+    message       TEXT,
+
+    source        TEXT        NOT NULL DEFAULT 'tracker_web',
+    notified      BOOLEAN     NOT NULL DEFAULT false
+);
+
+CREATE INDEX IF NOT EXISTS ix_leads_created_at ON leads (created_at DESC);

@@ -1,6 +1,18 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 
+type LeadRow = {
+  id: number;
+  created_at: string;
+  name: string;
+  email: string;
+  phone: string | null;
+  company: string | null;
+  origin_port: string | null;
+  dest_port: string | null;
+  notified: boolean;
+};
+
 type MailRow = {
   message_id: string;
   sent_at: string;
@@ -41,6 +53,7 @@ export default function AdminClient() {
   const [results, setResults] = useState<IngestResult[]>([]);
   const [errors, setErrors] = useState<IngestError[]>([]);
   const [mails, setMails] = useState<MailRow[]>([]);
+  const [leads, setLeads] = useState<LeadRow[]>([]);
   const [health, setHealth] = useState<Health | null>(null);
   const [pasteBody, setPasteBody] = useState("");
   const [pasteDate, setPasteDate] = useState(new Date().toISOString().slice(0, 10));
@@ -53,6 +66,7 @@ export default function AdminClient() {
       const r = await fetch("/api/admin/recent", { cache: "no-store" });
       const j = await r.json().catch(() => ({}));
       setMails(j.mails ?? []);
+      setLeads(j.leads ?? []);
       setHealth(j.health ?? null);
       // A dead database used to fail silently here, leaving a blank page and
       // no reason. Say so instead.
@@ -253,6 +267,53 @@ export default function AdminClient() {
             ))}
           </section>
         )}
+
+        <section className="border border-slate-200 rounded-lg overflow-hidden">
+          <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-200">
+            <h2 className="text-sm font-semibold">Leads from the tracker</h2>
+          </div>
+          <div className="max-h-[400px] overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="text-[11px] uppercase tracking-wider text-slate-500 bg-white sticky top-0">
+                <tr>
+                  <th className="text-left px-4 py-2 font-medium">Received</th>
+                  <th className="text-left px-4 py-2 font-medium">Name</th>
+                  <th className="text-left px-4 py-2 font-medium">Contact</th>
+                  <th className="text-left px-4 py-2 font-medium">Lane</th>
+                  <th className="text-left px-4 py-2 font-medium">Notified</th>
+                </tr>
+              </thead>
+              <tbody>
+                {leads.map((l) => (
+                  <tr key={l.id} className="border-t border-slate-100">
+                    <td className="px-4 py-2 whitespace-nowrap text-slate-500">
+                      {new Date(l.created_at).toLocaleString("en-GB")}
+                    </td>
+                    <td className="px-4 py-2 text-xs">
+                      {l.name}
+                      {l.company ? ` · ${l.company}` : ""}
+                    </td>
+                    <td className="px-4 py-2 text-xs">
+                      {l.email}
+                      {l.phone ? ` · ${l.phone}` : ""}
+                    </td>
+                    <td className="px-4 py-2 text-xs">
+                      {l.origin_port && l.dest_port ? `${l.origin_port} → ${l.dest_port}` : "—"}
+                    </td>
+                    <td className="px-4 py-2 text-xs">{l.notified ? "yes" : "no"}</td>
+                  </tr>
+                ))}
+                {leads.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="px-4 py-6 text-center text-slate-400 text-sm">
+                      No leads yet.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
 
         <section className="border border-slate-200 rounded-lg overflow-hidden">
           <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-200">

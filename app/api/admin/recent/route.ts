@@ -23,6 +23,23 @@ export async function GET() {
      LIMIT 25`
   );
 
+  const leads = await query<{
+    id: number;
+    created_at: string;
+    name: string;
+    email: string;
+    phone: string | null;
+    company: string | null;
+    origin_port: string | null;
+    dest_port: string | null;
+    notified: boolean;
+  }>(
+    `SELECT id, created_at, name, email, phone, company, origin_port, dest_port, notified
+     FROM leads
+     ORDER BY created_at DESC
+     LIMIT 25`
+  );
+
   const [health] = await query<{
     last_quote_date: string | null;
     days_since_last: number | null;
@@ -41,12 +58,12 @@ export async function GET() {
      FROM freight_pipeline_health`
   );
 
-  return NextResponse.json({ mails, health });
+  return NextResponse.json({ mails, leads, health });
   } catch (e) {
     // The admin page must still render when the database is unreachable --
     // otherwise the operator sees an empty screen with no clue why.
     return NextResponse.json(
-      { mails: [], health: null, error: describeError(e) },
+      { mails: [], leads: [], health: null, error: describeError(e) },
       { status: 503 }
     );
   }

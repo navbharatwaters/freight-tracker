@@ -4,6 +4,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
 import type { UiRow } from "./page";
+import LeadForm from "./LeadForm";
 
 const DESTS = ["NHAVA SHEVA", "CHENNAI", "KOLKATA"] as const;
 const DAY = 86_400_000;
@@ -57,9 +58,9 @@ export default function FreightTrackerClient({
    * Drops only the outer chrome -- the wordmark, the h1 and the tagline, which
    * the host page supplies itself, plus the full-height page padding.
    *
-   * Everything that carries meaning stays: the controls, the chart, the table,
-   * the quote counts, the thin-data warning and the methodology/limits note.
-   * That note is the accuracy and liability statement, and embed visitors are
+   * Everything that carries meaning stays: the controls, the chart, the
+   * thin-data warning, the lead form and the methodology/limits note. That
+   * note is the accuracy and liability statement, and embed visitors are
    * strangers with no other context -- they need it most. Do not strip it.
    */
   embed?: boolean;
@@ -132,14 +133,6 @@ export default function FreightTrackerClient({
   const thin = points.some((s) => s.n40 > 0 && s.n40 < 5);
   const spanDays = points.length > 1 ? Math.round((latest.t - first.t) / DAY) : 0;
   const gaps = series.filter((s) => s.gap).length;
-
-  const table = useMemo(
-    () =>
-      data
-        .filter((r) => r.dest === dest && r.date === LATEST)
-        .sort((a, b) => (b.rate40 || 0) - (a.rate40 || 0)),
-    [data, dest, LATEST]
-  );
 
   const pad = Math.max(DAY, Math.round((spanDays * DAY) / 60));
   const domain: [number, number] = points.length
@@ -274,8 +267,8 @@ export default function FreightTrackerClient({
 
         <div className="grid grid-cols-2 gap-4">
           {[
-            { l: "20ft", v: latest?.rate20, d: d20, n: latest?.n20 },
-            { l: "40ft / 40HQ", v: latest?.rate40, d: d40, n: latest?.n40 },
+            { l: "20ft", v: latest?.rate20, d: d20 },
+            { l: "40ft / 40HQ", v: latest?.rate40, d: d40 },
           ].map((c) => (
             <div key={c.l} className="border border-slate-200 rounded-lg p-4 md:p-5">
               <p className="text-[11px] uppercase tracking-wider text-slate-500">{c.l}</p>
@@ -287,7 +280,6 @@ export default function FreightTrackerClient({
                   {Number(c.d) > 0 ? "▲" : "▼"} {Math.abs(Number(c.d))}% over {spanDays} days
                 </p>
               )}
-              <p className="text-[11px] text-slate-400 mt-0.5">{c.n} carrier quotes</p>
             </div>
           ))}
         </div>
@@ -326,8 +318,7 @@ export default function FreightTrackerClient({
                 }
                 formatter={(v, n, p: { payload?: Point & { gap?: boolean } }) => {
                   if (p.payload?.gap) return ["", ""];
-                  const cnt = n === "20ft" ? p.payload?.n20 : p.payload?.n40;
-                  return [v ? `$${Number(v).toLocaleString()} · ${cnt} quotes` : "—", String(n)];
+                  return [v ? `$${Number(v).toLocaleString()}` : "—", String(n)];
                 }}
               />
               <Legend iconType="line" wrapperStyle={{ fontSize: 12, paddingTop: 10 }} />
@@ -376,44 +367,13 @@ export default function FreightTrackerClient({
           )}
         </section>
 
-        <section className="border border-slate-200 rounded-lg overflow-hidden">
-          <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-200 flex items-baseline justify-between gap-2">
-            <h2 className="text-sm font-semibold">All origins → {dest}</h2>
-            <span className="text-[11px] text-slate-500">as of {fmtShort(ts(LATEST))}</span>
-          </div>
-          <table className="w-full text-sm">
-            <thead className="text-[11px] uppercase tracking-wider text-slate-500">
-              <tr>
-                <th className="text-left px-4 py-2 font-medium">Origin</th>
-                <th className="text-right px-4 py-2 font-medium">20ft</th>
-                <th className="text-right px-4 py-2 font-medium">40ft</th>
-                <th className="text-right px-4 py-2 font-medium">Quotes</th>
-              </tr>
-            </thead>
-            <tbody>
-              {table.map((r) => (
-                <tr
-                  key={r.origin}
-                  onClick={() => setOrigin(r.origin)}
-                  className={`border-t border-slate-100 cursor-pointer hover:bg-slate-50 ${
-                    r.origin === activeOrigin ? "bg-slate-50" : ""
-                  }`}
-                >
-                  <td className="px-4 py-2 capitalize">{r.origin.toLowerCase()}</td>
-                  <td className="px-4 py-2 text-right tabular-nums">{r.rate20 ? `$${r.rate20}` : "—"}</td>
-                  <td className="px-4 py-2 text-right tabular-nums font-medium">{r.rate40 ? `$${r.rate40}` : "—"}</td>
-                  <td className="px-4 py-2 text-right text-slate-400 tabular-nums">{r.n40}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </section>
+        <LeadForm origin={activeOrigin} dest={dest} embed={embed} />
 
         <div className="border-t border-slate-200 pt-5 space-y-3 text-xs text-slate-500 leading-relaxed">
           <p>
             <strong className="text-slate-700">How this is calculated.</strong> Each point is the simple average of
             every carrier quotation received for that lane on that date. 40HQ is treated as 40ft. Carrier identities
-            are not disclosed. Quote counts are shown so you can judge how much weight a point carries.
+            are not disclosed.
           </p>
           <p>
             <strong className="text-slate-700">Coverage and limits.</strong> Rates are compiled from a single freight
