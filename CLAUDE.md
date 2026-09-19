@@ -29,13 +29,14 @@ branch handles a real case found in production email:
 Extending is fine. Rewriting from scratch loses all of the above, because
 these cases are in the fixture, not in general knowledge.
 
-**Open work lives in `TODO.md`.** Check it before starting — it currently
-records that the live n8n Code node still runs an outdated copy of the parser
-and is silently dropping rows.
+**Open work lives in `TODO.md`.** Check it before starting.
 
-**The two parsers must stay in sync.** Python is for offline `.eml` batches,
-JS runs in the n8n Code node. They must produce identical output. Change one,
-change the other, re-run tests.
+**The parsers must stay in sync.** Python (`parser/extract.py`) is for offline
+`.eml` batches; `lib/parse-mail.ts` is what production runs (IMAP poll →
+`/api/admin/ingest`) and is a literal port of `parser/n8n_parse.js`. n8n was
+the original plan and never went live — the IMAP poll replaced it on
+2026-09-09. All three must produce identical output. Change one, change the
+others, re-run `tests/test_parser.py` and `tests/xcheck_parsers.mjs`.
 
 **Run `db/backfill.sql` exactly once.** It has no `ON CONFLICT` guard — the
 archived rows have NULL `message_id` (forwards lose the header), and the
