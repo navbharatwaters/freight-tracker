@@ -32,7 +32,7 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 export async function listMarkupRules(): Promise<MarkupRule[]> {
   return query<MarkupRule>(`
     SELECT
-      r.id,
+      r.id::INT AS id,
       to_char(r.effective_from, 'YYYY-MM-DD') AS effective_from,
       r.amount_usd,
       r.set_by,
@@ -54,7 +54,7 @@ export async function listMarkupRules(): Promise<MarkupRule[]> {
 /** The rule in force for quotes dated today. */
 export async function currentMarkup(): Promise<MarkupRule | null> {
   const [r] = await query<MarkupRule>(`
-    SELECT id, to_char(effective_from, 'YYYY-MM-DD') AS effective_from,
+    SELECT id::INT AS id, to_char(effective_from, 'YYYY-MM-DD') AS effective_from,
            amount_usd, set_by, note, created_at, 0 AS points
     FROM markup_rules
     WHERE effective_from <= CURRENT_DATE
@@ -99,7 +99,7 @@ export async function addMarkupRule(input: {
            set_by     = EXCLUDED.set_by,
            note       = EXCLUDED.note,
            created_at = now()
-     RETURNING id, to_char(effective_from, 'YYYY-MM-DD') AS effective_from,
+     RETURNING id::INT AS id, to_char(effective_from, 'YYYY-MM-DD') AS effective_from,
                amount_usd, set_by, note, created_at, 0 AS points`,
     [input.effective_from, amount, input.set_by || "admin", input.note?.trim() || null]
   );
@@ -110,10 +110,10 @@ export async function addMarkupRule(input: {
 /** Delete a rule -- only the newest one, and never the 1970 seed. */
 export async function deleteNewestMarkupRule(id: number): Promise<void> {
   const [newest] = await query<{ id: number; effective_from: string }>(
-    `SELECT id, to_char(effective_from, 'YYYY-MM-DD') AS effective_from
+    `SELECT id::INT AS id, to_char(effective_from, 'YYYY-MM-DD') AS effective_from
      FROM markup_rules ORDER BY effective_from DESC LIMIT 1`
   );
-  if (!newest || newest.id !== Number(id)) {
+  if (!newest || Number(newest.id) !== Number(id)) {
     throw new Error("only the newest rule can be deleted");
   }
   if (newest.effective_from === "1970-01-01") {

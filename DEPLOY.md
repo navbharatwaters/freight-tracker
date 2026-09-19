@@ -213,6 +213,21 @@ systemctl status freight-tracker.service --no-pager | head -20
 `npm ci`, not `npm install` — this release includes the Next.js 15.1.9 patch
 for CVE-2025-66478 and `ci` installs the locked versions exactly.
 
+**Do not run `npm ci` or `npm run build` in a shell that has sourced `.env`.**
+It sets `NODE_ENV=production`, which makes `npm ci` skip devDependencies
+(tailwindcss among them) and the build then fails with
+`Cannot find module 'tailwindcss'` — the service comes back up on nothing and
+the site is down until you reinstall. This happened on 2026-09-19. If you did
+source it for the psql steps, either open a fresh shell for step 8 or prefix:
+
+```bash
+env -u NODE_ENV npm ci
+env -u NODE_ENV npm run build
+```
+
+If the build still fails after a correct install, `rm -rf .next` and build
+again — Turbopack's cache keeps stale resolver paths from the broken run.
+
 ## 9. Verify end to end
 
 ```bash
