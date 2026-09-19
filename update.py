@@ -40,8 +40,10 @@ OUT = ROOT / "data"
 # rates are wholesale (agency-only); booking adds ~300-400 USD fuel/currency
 # surcharges. The chart shows OUR rate. Applied to index.json only --
 # rates.csv stays the raw quote, and so does the parser fixture.
-# MUST match the +300 in the freight_index_daily view (db/schema.sql,
-# db/migration_003_markup.sql). Change one, change the other.
+# Production reads the amount from the markup_rules table (editable in
+# /admin, dated, see db/migration_004_markup_rules.sql). This static path has
+# no database, so it stays a flat constant equal to the table's SEED row.
+# Dev/offline fallback only -- it does not follow later admin changes.
 MARKUP_USD = 300
 DATE_IN_NAME = re.compile(r"(\d{4})[-_]?(\d{2})[-_]?(\d{2})")
 

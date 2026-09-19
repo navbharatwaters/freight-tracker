@@ -169,6 +169,26 @@ reads whatever the view returns; there is nothing to redeploy for this step,
 and nothing to re-ingest. Rollback = re-run the view block from `db/schema.sql`
 at commit `83e0440`.
 
+### 6c. Migration 004 — markup becomes an admin-editable dated rule (2026-09-19)
+
+Replaces 003's hard-coded `+ 300` with a `markup_rules` table. Seeds one row
+(1970-01-01, 300), so no published number changes. Touches no quote data.
+Run **before** deploying the code — the new `/api/admin/markup` route selects
+from the table and 500s without it.
+
+```bash
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$APP/db/migration_004_markup_rules.sql"
+psql "$DATABASE_URL" -c "SELECT effective_from, amount_usd, set_by FROM markup_rules ORDER BY effective_from;"
+psql "$DATABASE_URL" -c "SELECT quote_date, rate_20, rate_40, markup_usd FROM freight_index_daily WHERE origin_port='SHENZHEN' AND dest_port='NHAVA SHEVA' AND quote_date='2026-07-17';"
+```
+
+**Expected:** one rule `1970-01-01 | 300 | migration_004`, and still
+`1860 | 1886 | 300`. Afterwards the operator changes the markup from the
+"Published markup" card on `/admin`; new rules apply to quotes dated on or
+after the chosen date and the public caches are flushed immediately.
+Rollback = `DROP TABLE markup_rules CASCADE` then re-run
+`db/migration_003_markup.sql` (which recreates both views).
+
 ## 7. Verify the schema and that no data moved
 
 ```bash

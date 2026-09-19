@@ -53,13 +53,17 @@ change it.
 **Published rates are raw mean + $300, deliberately.** Ocean Star's mailed
 rates are wholesale — only a few Indian agencies (us) receive them, and the
 booking invoice adds ~$300–400 of fuel/currency surcharges. The chart shows
-*our* rate: base + 300 flat, both 20ft and 40ft, no footnote. Decided
-2026-09-19. The markup lives in exactly two places and must match:
-`freight_index_daily` view (`db/schema.sql`, `db/migration_003_markup.sql`)
-and `MARKUP_USD` in `update.py`. Applied **on read only** — `freight_quotes`,
-`data/rates.csv` and the parser fixture stay raw. Never add it at ingest;
-`tests/test_markup.py` will catch you doubling it. It is not a bug that the
-page shows $1886 where the fixture says $1586.
+*our* rate: base + markup, both 20ft and 40ft, no footnote. Decided
+2026-09-19. The amount is a **dated rule** in `markup_rules` (seed 300,
+`db/migration_004_markup_rules.sql`), editable from `/admin`. Each chart point
+takes the newest rule whose `effective_from <= quote_date` — keyed on the
+*quote* date, never the day the admin pressed the button — so a change moves
+future points and history keeps what was in force then. Applied **on read
+only**, in the `freight_index_daily` view — `freight_quotes`, `data/rates.csv`
+and the parser fixture stay raw. Never add it at ingest; `tests/test_markup.py`
+will catch you doubling it. `update.py`'s `MARKUP_USD` is the offline fallback
+and must equal the seed row only. It is not a bug that the page shows $1886
+where the fixture says $1586.
 
 ## Data facts
 

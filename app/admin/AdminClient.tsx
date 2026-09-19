@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
+import MarkupCard from "./MarkupCard";
 
 type LeadRow = {
   id: number;
@@ -168,6 +169,8 @@ export default function AdminClient() {
             <Stat label="Failed mails 30d" value={String(health.failed_mails_30d)} />
           </div>
         )}
+
+        <MarkupCard />
 
         <section
           onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}

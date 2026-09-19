@@ -74,28 +74,70 @@ CREATE TABLE IF NOT EXISTS freight_mail_log (
 -- 3. PUBLISHED LAYER: the numbers the website reads.
 --    Simple average, per your spec. Both senders count.
 --
---    +300 USD flat on every published rate, both box sizes. Ocean Star's
---    mailed rates are wholesale (agency-only); booking adds ~300-400 of
---    fuel/currency surcharges. The chart shows OUR rate. Applied here on
---    read, never at ingest -- freight_quotes stays raw. Same constant in
---    update.py (MARKUP_USD). See db/migration_003_markup.sql.
+--    Every published rate carries a flat USD markup on top of the raw
+--    mean, both box sizes. Ocean Star's mailed rates are wholesale
+--    (agency-only); booking adds fuel/currency surcharges. The chart
+--    shows OUR rate. Applied here on read, never at ingest --
+--    freight_quotes stays raw.
+--
+--    The amount is a dated rule (markup_rules), editable from /admin.
+--    Each point takes the newest rule whose effective_from <= its own
+--    quote_date, so changing the markup moves future points only and
+--    history keeps what was in force at the time. Seed = 300.
+--    See db/migration_004_markup_rules.sql.
 -- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS markup_rules (
+    id             BIGSERIAL PRIMARY KEY,
+    effective_from DATE        NOT NULL UNIQUE,
+    amount_usd     INTEGER     NOT NULL CHECK (amount_usd BETWEEN 0 AND 1000),
+    set_by         TEXT        NOT NULL DEFAULT 'admin',
+    note           TEXT,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Dated 1970 so every quote_date has exactly one rule; the join never NULLs.
+INSERT INTO markup_rules (effective_from, amount_usd, set_by, note)
+VALUES ('1970-01-01', 300, 'schema', 'initial flat markup')
+ON CONFLICT (effective_from) DO NOTHING;
+
 CREATE OR REPLACE VIEW freight_index_daily AS
+WITH raw AS (
+    SELECT
+        quote_date,
+        origin_port,
+        dest_port,
+        ROUND(AVG(rate_20))::INT          AS rate_20,
+        ROUND(AVG(rate_40))::INT          AS rate_40,
+        COUNT(rate_20)::INT               AS n_20,
+        COUNT(rate_40)::INT               AS n_40,
+        MIN(rate_40)::INT                 AS min_40,
+        MAX(rate_40)::INT                 AS max_40,
+        COUNT(DISTINCT sender)::INT       AS n_senders,
+        STRING_AGG(DISTINCT source, ',')  AS sources
+    FROM freight_quotes
+    GROUP BY quote_date, origin_port, dest_port
+)
 SELECT
-    quote_date,
-    origin_port,
-    dest_port,
-    ROUND(AVG(rate_20))::INT + 300    AS rate_20,
-    ROUND(AVG(rate_40))::INT + 300    AS rate_40,
-    COUNT(rate_20)::INT               AS n_20,
-    COUNT(rate_40)::INT               AS n_40,
-    MIN(rate_40)::INT + 300           AS min_40,
-    MAX(rate_40)::INT + 300           AS max_40,
-    COUNT(DISTINCT sender)::INT       AS n_senders,
-    STRING_AGG(DISTINCT source, ',')  AS sources,
-    300                               AS markup_usd
-FROM freight_quotes
-GROUP BY quote_date, origin_port, dest_port;
+    r.quote_date,
+    r.origin_port,
+    r.dest_port,
+    r.rate_20 + m.amount_usd              AS rate_20,
+    r.rate_40 + m.amount_usd              AS rate_40,
+    r.n_20,
+    r.n_40,
+    r.min_40 + m.amount_usd               AS min_40,
+    r.max_40 + m.amount_usd               AS max_40,
+    r.n_senders,
+    r.sources,
+    m.amount_usd                          AS markup_usd
+FROM raw r
+CROSS JOIN LATERAL (
+    SELECT amount_usd
+    FROM markup_rules
+    WHERE effective_from <= r.quote_date
+    ORDER BY effective_from DESC
+    LIMIT 1
+) m;
 
 
 -- Latest observation per lane (the "as of" number on the page).

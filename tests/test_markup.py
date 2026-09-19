@@ -33,16 +33,29 @@ def test_markup_is_300():
     assert MARKUP_USD == 300
 
 
-@pytest.mark.parametrize("sql", ["db/schema.sql", "db/migration_003_markup.sql"])
-def test_sql_view_uses_same_markup(sql):
+@pytest.mark.parametrize("sql", ["db/schema.sql", "db/migration_004_markup_rules.sql"])
+def test_sql_view_reads_markup_rules(sql):
+    """
+    Since migration 004 the amount is a dated row in markup_rules, editable
+    from /admin. The SQL must (a) seed that table with MARKUP_USD so a fresh
+    install matches update.py, and (b) add the rule's amount to every
+    published rate column -- never a literal.
+    """
     src = (ROOT / sql).read_text(encoding="utf-8")
+    seed = re.search(
+        r"INSERT INTO markup_rules\s*\(effective_from, amount_usd[^)]*\)\s*VALUES\s*\('1970-01-01',\s*(\d+)",
+        src,
+    )
+    assert seed, f"{sql}: no 1970 seed row"
+    assert int(seed.group(1)) == MARKUP_USD, f"{sql}: seed drifted from update.py"
+
     body = src[src.index("CREATE OR REPLACE VIEW freight_index_daily"):]
-    body = body[: body.index("FROM freight_quotes")]
+    body = body[: body.index("CROSS JOIN LATERAL")]
     for col in ("rate_20", "rate_40", "min_40", "max_40"):
-        m = re.search(rf"\+\s*(\d+)\s+AS {col}\b", body)
-        assert m, f"{sql}: {col} has no markup"
-        assert int(m.group(1)) == MARKUP_USD, f"{sql}: {col} markup drifted"
-    assert re.search(rf"\b{MARKUP_USD}\s+AS markup_usd\b", body), f"{sql}: markup_usd column"
+        assert re.search(rf"\+\s*m\.amount_usd\s+AS {col}\b", body), f"{sql}: {col} not marked up"
+        assert not re.search(rf"\+\s*\d+\s+AS {col}\b", body), f"{sql}: {col} uses a literal"
+    assert re.search(r"m\.amount_usd\s+AS markup_usd\b", body), f"{sql}: markup_usd column"
+    assert "WHERE effective_from <= r.quote_date" in src, f"{sql}: rule must key on quote_date"
 
 
 @pytest.fixture(scope="module")
