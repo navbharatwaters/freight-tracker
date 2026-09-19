@@ -73,20 +73,27 @@ CREATE TABLE IF NOT EXISTS freight_mail_log (
 -- ------------------------------------------------------------
 -- 3. PUBLISHED LAYER: the numbers the website reads.
 --    Simple average, per your spec. Both senders count.
+--
+--    +300 USD flat on every published rate, both box sizes. Ocean Star's
+--    mailed rates are wholesale (agency-only); booking adds ~300-400 of
+--    fuel/currency surcharges. The chart shows OUR rate. Applied here on
+--    read, never at ingest -- freight_quotes stays raw. Same constant in
+--    update.py (MARKUP_USD). See db/migration_003_markup.sql.
 -- ------------------------------------------------------------
 CREATE OR REPLACE VIEW freight_index_daily AS
 SELECT
     quote_date,
     origin_port,
     dest_port,
-    ROUND(AVG(rate_20))::INT          AS rate_20,
-    ROUND(AVG(rate_40))::INT          AS rate_40,
+    ROUND(AVG(rate_20))::INT + 300    AS rate_20,
+    ROUND(AVG(rate_40))::INT + 300    AS rate_40,
     COUNT(rate_20)::INT               AS n_20,
     COUNT(rate_40)::INT               AS n_40,
-    MIN(rate_40)::INT                 AS min_40,
-    MAX(rate_40)::INT                 AS max_40,
+    MIN(rate_40)::INT + 300           AS min_40,
+    MAX(rate_40)::INT + 300           AS max_40,
     COUNT(DISTINCT sender)::INT       AS n_senders,
-    STRING_AGG(DISTINCT source, ',')  AS sources
+    STRING_AGG(DISTINCT source, ',')  AS sources,
+    300                               AS markup_usd
 FROM freight_quotes
 GROUP BY quote_date, origin_port, dest_port;
 

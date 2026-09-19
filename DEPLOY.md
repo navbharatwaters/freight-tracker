@@ -153,6 +153,22 @@ It is one transaction: build the new index, drop the old, rename. The new index
 is strictly more permissive than the old one, so it always builds over existing
 data.
 
+### 6b. Migration 003 — +$300 published markup (2026-09-19)
+
+Run after 001 (order does not actually matter; it only replaces two views).
+No `pg_dump` restore is ever needed for it — it touches no table.
+
+```bash
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$APP/db/migration_003_markup.sql"
+psql "$DATABASE_URL" -c "SELECT quote_date, rate_20, rate_40, markup_usd FROM freight_index_daily WHERE origin_port='SHENZHEN' AND dest_port='NHAVA SHEVA' AND quote_date='2026-07-17';"
+```
+
+**Expected:** `1860 | 1886 | 300`. If you see `1560 | 1586` the view did not
+replace. The site picks it up on the next request — the Node code already
+reads whatever the view returns; there is nothing to redeploy for this step,
+and nothing to re-ingest. Rollback = re-run the view block from `db/schema.sql`
+at commit `83e0440`.
+
 ## 7. Verify the schema and that no data moved
 
 ```bash

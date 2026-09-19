@@ -50,6 +50,17 @@ table — methodology will change, and recomputation must stay possible.
 business decided this. If you think outliers are a problem, say so; don't
 change it.
 
+**Published rates are raw mean + $300, deliberately.** Ocean Star's mailed
+rates are wholesale — only a few Indian agencies (us) receive them, and the
+booking invoice adds ~$300–400 of fuel/currency surcharges. The chart shows
+*our* rate: base + 300 flat, both 20ft and 40ft, no footnote. Decided
+2026-09-19. The markup lives in exactly two places and must match:
+`freight_index_daily` view (`db/schema.sql`, `db/migration_003_markup.sql`)
+and `MARKUP_USD` in `update.py`. Applied **on read only** — `freight_quotes`,
+`data/rates.csv` and the parser fixture stay raw. Never add it at ingest;
+`tests/test_markup.py` will catch you doubling it. It is not a bug that the
+page shows $1886 where the fixture says $1586.
+
 ## Data facts
 
 - 10,508 quotes, 86 emails, 6 Mar – 21 Aug 2026, 66 distinct quote dates
